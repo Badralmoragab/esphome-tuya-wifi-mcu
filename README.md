@@ -39,7 +39,7 @@ esp32:
 external_components:
   - source:
       type: git
-      url: https://github.com/skymics/esphome-tuya-wifi-mcu
+      url: https://github.com/Badralmoragab/esphome-tuya-wifi-mcu
       ref: v2.0.0
 
 uart:
