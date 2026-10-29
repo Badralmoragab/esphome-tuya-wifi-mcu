@@ -1,5 +1,11 @@
 name: CI
 
+# A newer push to the same branch cancels the older, now-irrelevant run,
+# so only the latest commit is tested and the free runner quota is not wasted.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
   pull_request:
