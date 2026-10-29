@@ -1,0 +1,185 @@
+substitutions:
+  uart_path: /tmp/tuya-host-extended-uart
+  api_port: "16054"
+
+esphome:
+  name: tuya-host-extended
+  on_boot:
+    priority: -100
+    then:
+      - component.suspend: tuya_mcu
+
+host:
+
+logger:
+  level: VERBOSE
+
+api:
+  port: ${api_port}
+  reboot_timeout: 0s
+  batch_delay: 0ms
+  actions:
+    - action: upload_sync
+      then:
+        - tuya_wifi_mcu.upload_bool:
+            dp_id: 60
+            value: true
+            mode: sync
+    - action: upload_record
+      then:
+        - tuya_wifi_mcu.upload_value:
+            dp_id: 61
+            value: 12.5
+            scale: 1
+            mode: record
+    - action: upload_raw
+      then:
+        - tuya_wifi_mcu.upload_raw:
+            dp_id: 62
+            value: "0a0bff"
+    - action: upload_string
+      variables:
+        label: string
+      then:
+        - tuya_wifi_mcu.upload_string:
+            dp_id: 63
+            value: !lambda return label;
+    - action: wifi_test
+      then:
+        - tuya_wifi_mcu.wifi_test:
+    - action: query_network
+      then:
+        - tuya_wifi_mcu.query_network_status:
+    - action: set_local_temp
+      variables:
+        value: float
+      then:
+        - sensor.template.publish:
+            id: local_temp
+            state: !lambda return value;
+
+external_components:
+  - source:
+      type: local
+      path: ../../components
+
+uart:
+  id: tuya_uart
+  port: ${uart_path}
+  baud_rate: 9600
+  rx_buffer_size: 2048
+
+tuya_wifi_mcu:
+  id: tuya_mcu
+  product_id: "hostextended"
+  uart_id: tuya_uart
+  wifi_control_mode: module
+  wifi_led_pin: 16
+  wifi_reset_pin: 28
+  wifi_ble_led_pin: 20
+  pairing_method: ap
+  batch_reports: true
+  reset_notification: true
+  weather:
+    keys: [w.sunrise]
+  on_dp_download:
+    - dp_id: 70
+      then:
+        - text_sensor.template.publish:
+            id: last_generic
+            state: !lambda 'return std::to_string(dp_id) + ":" + esphome::tuya_wifi_mcu::tuya_dp_as_string(type, data);'
+  on_module_reset:
+    - text_sensor.template.publish:
+        id: last_reset
+        state: !lambda return std::to_string(reason);
+  on_upload_result:
+    - text_sensor.template.publish:
+        id: last_upload
+        state: !lambda 'return std::string(success ? "ok" : "fail") + (record ? "/record" : "/sync");'
+
+time:
+  - platform: tuya_wifi_mcu
+    id: tuya_time
+    source: gmt
+    timezone: UTC
+    # Synced once on module readiness; periodic polls would add frames to assertions.
+    update_interval: never
+
+number:
+  - platform: tuya_wifi_mcu
+    id: tuya_setpoint
+    name: Tuya Setpoint
+    dp_id: 10
+    min_value: -40
+    max_value: 100
+    step: 0.1
+    scale: 1
+
+select:
+  - platform: tuya_wifi_mcu
+    id: tuya_mode
+    name: Tuya Mode
+    dp_id: 11
+    options: ["off", "on", "memory"]
+
+text:
+  - platform: tuya_wifi_mcu
+    id: tuya_label
+    name: Tuya Label
+    dp_id: 12
+    mode: text
+
+sensor:
+  - platform: template
+    id: local_temp
+    name: Local Temp
+    update_interval: never
+  - platform: tuya_wifi_mcu
+    id: tuya_temp
+    name: Tuya Temp
+    dp_id: 13
+    scale: 1
+    sensor_id: local_temp
+    report_delta: 0.3
+  - platform: tuya_wifi_mcu
+    name: Tuya Bitmap
+    type: bitmap
+    dp_id: 14
+    bitmap_width: 2
+  - platform: tuya_wifi_mcu
+    name: Tuya RSSI
+    type: wifi_rssi
+    update_interval: never
+  - platform: tuya_wifi_mcu
+    name: Tuya WiFi Test
+    type: wifi_test
+  - platform: tuya_wifi_mcu
+    name: Weather Temp
+    type: weather
+    key: w.temp
+
+text_sensor:
+  - platform: template
+    id: last_generic
+    name: Last Generic
+  - platform: template
+    id: last_reset
+    name: Last Reset
+  - platform: template
+    id: last_upload
+    name: Last Upload
+  - platform: tuya_wifi_mcu
+    name: Tuya Raw
+    type: raw
+    dp_id: 15
+  - platform: tuya_wifi_mcu
+    name: Tuya Network
+    type: network_status
+    update_interval: never
+  - platform: tuya_wifi_mcu
+    name: Tuya MAC
+    type: mac_address
+  - platform: tuya_wifi_mcu
+    name: Weather Sunrise
+    type: weather
+    key: w.sunrise

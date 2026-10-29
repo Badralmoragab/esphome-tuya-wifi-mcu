@@ -1,0 +1,160 @@
+# Every v2 platform, trigger and action on a real ESP32-S3 target.
+esphome:
+  name: tuya-idf-extended-test
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: esp-idf
+
+logger:
+
+external_components:
+  - source:
+      type: local
+      path: ../../components
+
+uart:
+  id: tuya_uart
+  tx_pin: GPIO15
+  rx_pin: GPIO16
+  baud_rate: 115200
+  rx_buffer_size: 1024
+
+tuya_wifi_mcu:
+  id: tuya_mcu
+  product_id: "abcdefghijklmnop"
+  uart_id: tuya_uart
+  wifi_control_mode: module
+  wifi_led_pin: 16
+  wifi_reset_pin: 28
+  wifi_ble_led_pin: 20
+  batch_reports: true
+  reset_notification: true
+  feature_config: '{"abv":8,"buf":1024}'
+  weather:
+    keys: [w.sunrise, w.sunset]
+  on_dp_download:
+    - dp_id: 49
+      auto_acknowledge: false
+      then:
+        - logger.log:
+            format: "remote_add %u bytes"
+            args: [data.size()]
+  on_network_status:
+    - logger.log:
+        format: "network %u"
+        args: [status]
+  on_weather:
+    - logger.log:
+        format: "%s[%u]=%s"
+        args: [key.c_str(), day, value.c_str()]
+  on_module_ready:
+    - tuya_wifi_mcu.query_network_status:
+  on_wifi_test:
+    - logger.log:
+        format: "wifi test %d %u"
+        args: [success, strength]
+
+time:
+  - platform: tuya_wifi_mcu
+    id: tuya_time
+    source: local
+    timezone: Asia/Muscat
+
+switch:
+  - platform: template
+    id: local_switch
+    optimistic: true
+    on_turn_on:
+      - if:
+          condition:
+            tuya_wifi_mcu.is_cloud_connected:
+          then:
+            - tuya_wifi_mcu.upload_raw:
+                dp_id: 50
+                value: [0x01, 0x02]
+                mode: record
+                record_time: local
+                time_id: tuya_time
+  - platform: tuya_wifi_mcu
+    id: tuya_switch
+    dp_id: 1
+    bind_switch_id: local_switch
+    internal: true
+
+number:
+  - platform: tuya_wifi_mcu
+    name: Max Temp
+    dp_id: 135
+    min_value: -40
+    max_value: 100
+    step: 0.1
+    scale: 1
+
+select:
+  - platform: tuya_wifi_mcu
+    name: Relay Status
+    dp_id: 38
+    options: ["off", "on", "memory"]
+
+text:
+  - platform: tuya_wifi_mcu
+    name: IP Address
+    dp_id: 139
+
+sensor:
+  - platform: template
+    id: local_temp
+    lambda: return 21.5;
+  - platform: tuya_wifi_mcu
+    name: Temp
+    dp_id: 131
+    scale: 1
+    sensor_id: local_temp
+    report_delta: 0.3
+  - platform: tuya_wifi_mcu
+    name: Fault Bitmap
+    type: bitmap
+    dp_id: 140
+    bitmap_width: 1
+  - platform: tuya_wifi_mcu
+    name: Tuya RSSI
+    type: wifi_rssi
+  - platform: tuya_wifi_mcu
+    name: Tuya Free Memory
+    type: free_memory
+  - platform: tuya_wifi_mcu
+    name: Weather Temp
+    type: weather
+    key: w.temp
+
+text_sensor:
+  - platform: tuya_wifi_mcu
+    name: Fault Info
+    dp_id: 146
+  - platform: tuya_wifi_mcu
+    name: Remote List
+    type: raw
+    dp_id: 50
+  - platform: tuya_wifi_mcu
+    name: Tuya Network
+    type: network_status
+  - platform: tuya_wifi_mcu
+    name: Tuya MAC
+    type: mac_address
+  - platform: tuya_wifi_mcu
+    name: Sunrise
+    type: weather
+    key: w.sunrise
+
+button:
+  - platform: template
+    name: Tuya Pairing
+    on_press:
+      - tuya_wifi_mcu.start_pairing:
+          mode: ap
+  - platform: template
+    name: Tuya WiFi Test
+    on_press:
+      - tuya_wifi_mcu.wifi_test:

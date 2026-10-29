@@ -1,0 +1,130 @@
+# Generic relay board pattern (e.g. 32 relays on MCP23017) with the DP layout
+# switch_1..6 = DP 1..6, switch_7..32 = DP 102..127, plus sensors, enums,
+# strings and raw DPs. Two relays are shown; the pattern scales to 64+.
+esphome:
+  name: relay-board
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: esp-idf
+
+external_components:
+  - source:
+      type: git
+      url: https://github.com/skymics/esphome-tuya-wifi-mcu
+      ref: v2.0.0
+
+ethernet:
+  type: W5500
+  clk_pin: GPIO42
+  mosi_pin: GPIO44
+  miso_pin: GPIO40
+  cs_pin: GPIO39
+  interrupt_pin: GPIO41
+  reset_pin: GPIO43
+
+logger:
+api:
+ota:
+  platform: esphome
+
+uart:
+  id: tuya_uart
+  tx_pin: GPIO15
+  rx_pin: GPIO16
+  baud_rate: 115200
+  rx_buffer_size: 1024
+
+tuya_wifi_mcu:
+  id: tuya_mcu
+  product_id: "xxxxxxxxxxxxxxxx"
+  uart_id: tuya_uart
+  wifi_control_mode: mcu       # ESP32 drives the pairing button and LED
+  wifi_reset_pin:
+    number: GPIO4
+    mode: INPUT_PULLUP
+  wifi_led_pin: GPIO6
+  batch_reports: true          # one frame for all DPs on state queries
+  on_dp_download:
+    - dp_id: 49                # raw DP without an entity
+      then:
+        - logger.log:
+            format: "remote_add: %s"
+            args: ['tuya_wifi_mcu::tuya_dp_as_string(type, data).c_str()']
+
+i2c:
+  sda: 11
+  scl: 10
+
+mcp23017:
+  - id: mcp_out1
+    address: 0x20
+
+switch:
+  - platform: gpio
+    id: relay_1
+    name: Relay 1
+    pin: {mcp23xxx: mcp_out1, number: 0, mode: OUTPUT}
+  - platform: tuya_wifi_mcu
+    id: relay_1_tuya
+    dp_id: 1
+    bind_switch_id: relay_1
+    internal: true
+  - platform: gpio
+    id: relay_7
+    name: Relay 7
+    pin: {mcp23xxx: mcp_out1, number: 6, mode: OUTPUT}
+  - platform: tuya_wifi_mcu
+    id: relay_7_tuya
+    dp_id: 102
+    bind_switch_id: relay_7
+    internal: true
+
+select:
+  - platform: tuya_wifi_mcu
+    name: Relay power-on state
+    dp_id: 38
+    options: ["off", "on", "memory"]
+
+number:
+  - platform: tuya_wifi_mcu
+    name: Max temperature
+    dp_id: 135
+    scale: 1
+    min_value: -40
+    max_value: 100
+    step: 0.1
+
+sensor:
+  - platform: sht3xd
+    temperature:
+      id: sht_temp
+      name: Temperature
+    humidity:
+      id: sht_hum
+      name: Humidity
+    address: 0x44
+    update_interval: 5s
+  - platform: tuya_wifi_mcu
+    dp_id: 131
+    scale: 1
+    sensor_id: sht_temp
+    report_delta: 0.3
+    internal: true
+    name: Tuya temp
+  - platform: tuya_wifi_mcu
+    dp_id: 132
+    sensor_id: sht_hum
+    report_delta: 1
+    internal: true
+    name: Tuya hum
+
+text_sensor:
+  - platform: tuya_wifi_mcu
+    name: Remote list
+    type: raw
+    dp_id: 50
+  - platform: tuya_wifi_mcu
+    type: network_status
+    name: Tuya network

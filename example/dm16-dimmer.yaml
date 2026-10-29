@@ -1,0 +1,111 @@
+# KinCony DM16 (16-channel 0-10 V DAC over Modbus) with Tuya, updated for v2.0.0.
+# Changes from KinCony's original: v2 ref, explicit wifi_control_mode, larger
+# UART buffer, identical gamma on each light pair, batched reports, cloud time,
+# network diagnostics. Only channels 1-2 are shown; repeat the pattern up to 16.
+esphome:
+  name: dm16
+  friendly_name: dm16
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: esp-idf          # or arduino
+
+external_components:
+  - source:
+      type: git
+      url: https://github.com/skymics/esphome-tuya-wifi-mcu
+      ref: v2.0.0
+
+logger:
+  baud_rate: 0
+
+api:
+ota:
+  platform: esphome
+
+ethernet:
+  type: W5500
+  clk_pin: GPIO1
+  mosi_pin: GPIO2
+  miso_pin: GPIO41
+  cs_pin: GPIO42
+  interrupt_pin: GPIO43
+  reset_pin: GPIO44
+
+uart:
+  - id: dac_uart
+    rx_pin: 4
+    tx_pin: 6
+    baud_rate: 115200
+  - id: tuya_mcu_uart
+    tx_pin: 16
+    rx_pin: 17
+    baud_rate: 9600
+    rx_buffer_size: 1024
+
+tuya_wifi_mcu:
+  product_id: qdmpkznox0g9kkvo
+  uart_id: tuya_mcu_uart
+  wifi_control_mode: module   # replaces -DWIFI_CONTROL_SELF_MODE=1
+  wifi_reset_pin: 28          # Tuya module pin numbers
+  wifi_led_pin: 16
+  batch_reports: true
+
+time:
+  - platform: tuya_wifi_mcu
+    id: tuya_time
+    timezone: Asia/Muscat
+
+text_sensor:
+  - platform: tuya_wifi_mcu
+    type: network_status
+    name: Tuya network
+
+modbus:
+  - uart_id: dac_uart
+
+modbus_controller:
+  - address: 1
+    update_interval: 5s
+
+output:
+  - platform: modbus_controller
+    id: dac_ch1_out
+    address: 0x0FA0
+    value_type: U_WORD
+    write_lambda: return (uint16_t) round(x * 4095.0);
+  - platform: modbus_controller
+    id: dac_ch2_out
+    address: 0x0FA1
+    value_type: U_WORD
+    write_lambda: return (uint16_t) round(x * 4095.0);
+
+light:
+  - platform: monochromatic
+    name: "DAC CH1"
+    output: dac_ch1_out
+    id: light_1
+    default_transition_length: 0s
+    gamma_correct: 1.0        # linear 0-10 V; must equal the Tuya twin below
+  - platform: tuya_wifi_mcu
+    name: "Tuya DAC CH1"
+    bind_light_id: light_1
+    output: dac_ch1_out
+    dp_id: 2                  # must be a Tuya value DP with range 0-100, scale 0
+    gamma_correct: 1.0
+    internal: true
+
+  - platform: monochromatic
+    name: "DAC CH2"
+    output: dac_ch2_out
+    id: light_2
+    default_transition_length: 0s
+    gamma_correct: 1.0
+  - platform: tuya_wifi_mcu
+    name: "Tuya DAC CH2"
+    bind_light_id: light_2
+    output: dac_ch2_out
+    dp_id: 8
+    gamma_correct: 1.0
+    internal: true
